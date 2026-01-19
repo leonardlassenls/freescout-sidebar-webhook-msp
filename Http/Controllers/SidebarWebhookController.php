@@ -87,6 +87,7 @@ class SidebarWebhookController extends Controller
                     'customerEmail'       => $customer->getMainEmail(),
                     'customerEmails'      => $customer->emails->pluck('email')->toArray(),
                     'customerPhones'      => $customer->getPhones(),
+                    'conversationId'      => (int) $conversation->id,
                     'conversationSubject' => $conversation->getSubject(),
                     'conversationType'    => $conversation->getTypeName(),
                     'mailboxId'           => $mailbox->id,
