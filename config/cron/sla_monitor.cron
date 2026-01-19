@@ -1,0 +1,1 @@
+*/5 * * * * cd /var/www/msp_manager && bundle exec rails runner "Sla::Monitor.run"
