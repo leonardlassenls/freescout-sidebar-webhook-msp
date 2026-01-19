@@ -82,12 +82,15 @@ class SidebarWebhookController extends Controller
                     break;
                 }
 
+                $conversationId = (int) $conversation->id;
+
                 $payload = [
                     'customerId'          => $customer->id,
                     'customerEmail'       => $customer->getMainEmail(),
                     'customerEmails'      => $customer->emails->pluck('email')->toArray(),
                     'customerPhones'      => $customer->getPhones(),
-                    'conversationId'      => (int) $conversation->id,
+                    'conversationId'      => $conversationId,
+                    'conversation_id'     => $conversationId,
                     'conversationSubject' => $conversation->getSubject(),
                     'conversationType'    => $conversation->getTypeName(),
                     'mailboxId'           => $mailbox->id,

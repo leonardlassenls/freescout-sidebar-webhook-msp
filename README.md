@@ -43,6 +43,8 @@ Your webhook server will receive a POST request with this kind of JSON body:
 ```json
 {
     "customerId": 123,
+    "conversationId": 456,
+    "conversation_id": 456,
     "conversationSubject": "Testing this sidebar",
     "conversationType": "Phone",
     "customerEmail": "hello@example.com",
