@@ -91,6 +91,11 @@ class SidebarWebhookController extends Controller
                     'customerPhones'      => $customer->getPhones(),
                     'conversationId'      => $conversationId,
                     'conversation_id'     => $conversationId,
+                    'conversationStatus'  => $conversation->status,
+                    'conversation_status' => $conversation->status,
+                    'conversationStatusName' => method_exists($conversation, 'getStatusName')
+                        ? $conversation->getStatusName()
+                        : null,
                     'conversationSubject' => $conversation->getSubject(),
                     'conversationType'    => $conversation->getTypeName(),
                     'mailboxId'           => $mailbox->id,
