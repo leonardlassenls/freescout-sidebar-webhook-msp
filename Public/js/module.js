@@ -13,6 +13,7 @@ function swh_load_content() {
 		function(response) {
             if (typeof(response.status) != "undefined" && response.status == 'success' && typeof(response.html) != "undefined" && response.html) {
                 $('#swh-content').html(response.html);
+                bindSidebarForms();
 
                 // Find a <title> element inside the response and display it
                 title = $('#swh-content').find('title').first().text();
@@ -29,6 +30,36 @@ function swh_load_content() {
             }
 		}, true
 	);
+}
+
+function bindSidebarForms() {
+    $('#swh-content').find('form').each(function() {
+        $(this).off('submit.swh').on('submit.swh', function(e) {
+            e.preventDefault();
+            var form = this;
+            var formAction = form.getAttribute('action') || form.action;
+            var formMethod = (form.getAttribute('method') || form.method || 'POST').toUpperCase();
+
+            fetch(formAction, {
+                method: formMethod || 'POST',
+                body: new FormData(form),
+                credentials: 'include',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(function(response) {
+                return response.text();
+            })
+            .then(function(html) {
+                $('#swh-content').html(html);
+                bindSidebarForms();
+            })
+            .catch(function(error) {
+                console.error('Sidebar form submit failed', error);
+            });
+        });
+    });
 }
 
 $(document).ready(function() {
