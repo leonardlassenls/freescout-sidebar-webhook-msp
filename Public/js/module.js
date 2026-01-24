@@ -73,6 +73,43 @@ $(document).ready(function() {
         return;
     }
 
+    const WEBHOOK_URL = $('#swh-content').data('webhook-url');
+
+    document.addEventListener('click', function(e) {
+        const el = e.target.closest('[data-sidebar-action]');
+        if (!el) {
+            return;
+        }
+
+        e.preventDefault();
+
+        const payload = {
+            sidebar_action: el.dataset.sidebarAction,
+            ticket_id: el.dataset.ticketId,
+            product_id: el.dataset.productId,
+            ticket_product_id: el.dataset.ticketProductId
+        };
+
+        console.log('Sidebar action', payload);
+
+        if (!WEBHOOK_URL) {
+            console.warn('Sidebar webhook URL is not configured');
+            return;
+        }
+
+        fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(function() {
+            window.location.reload();
+        })
+        .catch(function(error) {
+            console.error('Sidebar action failed', error);
+        });
+    });
+
     swh_load_content();
 
     $('.swh-refresh').click(function(e) {

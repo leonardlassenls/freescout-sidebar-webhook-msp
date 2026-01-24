@@ -4,7 +4,7 @@
             <h4 class="panel-title" id="swh-title"></h4>
         </div>
         <div class="panel-body">
-            <div class="panel panel-default hide" id="swh-content"></div>
+            <div class="panel panel-default hide" id="swh-content" data-webhook-url="{{ $webhook_url }}"></div>
             <div class="panel panel-default" id="swh-loader">
                 <img src="{{ asset('img/loader-tiny.gif') }}" />
             </div>
