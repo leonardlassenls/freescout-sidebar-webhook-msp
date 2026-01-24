@@ -34,9 +34,11 @@ function swh_load_content() {
 
 function bindSidebarForms() {
     $('#swh-content').find('form').each(function() {
+        ensureSidebarConversationFields(this);
         $(this).off('submit.swh').on('submit.swh', function(e) {
             e.preventDefault();
             var form = this;
+            ensureSidebarConversationFields(form);
             var formAction = form.getAttribute('action') || form.action;
             var formMethod = (form.getAttribute('method') || form.method || 'POST').toUpperCase();
 
@@ -64,6 +66,39 @@ function bindSidebarForms() {
             });
         });
     });
+}
+
+function ensureSidebarConversationFields(form) {
+    var conversationData = getSidebarConversationData();
+    if (!conversationData.conversationId || !conversationData.conversationStatus) {
+        return;
+    }
+
+    setHiddenInput(form, 'conversationId', conversationData.conversationId);
+    setHiddenInput(form, 'conversationStatus', conversationData.conversationStatus);
+    setHiddenInput(form, 'conversationStatusName', conversationData.conversationStatusName);
+}
+
+function setHiddenInput(form, name, value) {
+    var input = form.querySelector('input[name="' + name + '"]');
+    if (!input) {
+        input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        form.appendChild(input);
+    }
+    input.value = value;
+}
+
+function getSidebarConversationData() {
+    var container = document.getElementById('swh-content');
+    var dataset = container ? container.dataset : {};
+
+    return {
+        conversationId: dataset && dataset.conversationId ? dataset.conversationId : getGlobalAttr('conversation_id'),
+        conversationStatus: dataset && dataset.conversationStatus ? dataset.conversationStatus : getGlobalAttr('conversation_status'),
+        conversationStatusName: dataset && dataset.conversationStatusName ? dataset.conversationStatusName : (getGlobalAttr('conversation_status_name') || '')
+    };
 }
 
 $(document).ready(function() {
