@@ -52,8 +52,12 @@ function bindSidebarForms() {
                 return response.text();
             })
             .then(function(html) {
-                $('#swh-content').html(html);
-                bindSidebarForms();
+                if (html) {
+                    $('#swh-content').html(html);
+                    bindSidebarForms();
+                } else {
+                    swh_load_content();
+                }
             })
             .catch(function(error) {
                 console.error('Sidebar form submit failed', error);

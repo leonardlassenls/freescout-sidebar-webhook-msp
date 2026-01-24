@@ -7,6 +7,7 @@ use App\Conversation;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Http;
 
 class SidebarWebhookController extends Controller
 {
@@ -111,7 +112,7 @@ class SidebarWebhookController extends Controller
                         ],
                         'body' => json_encode($payload),
                     ]);
-                    $response['html'] = $result->getBody()->getContents();
+                    $response['html'] = $this->transformSidebarHtml($result->getBody()->getContents());
                     $response['status'] = 'success';
                 } catch (\Exception $e) {
                     $response['msg'] = 'Webhook error: ' . $e->getMessage();
@@ -130,5 +131,107 @@ class SidebarWebhookController extends Controller
         }
 
         return \Response::json($response);
+    }
+
+    public function handleAction(Request $request)
+    {
+        $url = config('sidebar.msp_manager_url');
+
+        if (!$url) {
+            return response()->json(['message' => 'MSP Manager URL is not configured'], 500);
+        }
+
+        Http::post($url, [
+            'sidebar_action' => $request->input('action'),
+            'ticket_id' => $request->input('ticket_id'),
+            'product_id' => $request->input('product_id'),
+            'ticket_product_id' => $request->input('ticket_product_id'),
+        ]);
+
+        return response()->noContent();
+    }
+
+    private function transformSidebarHtml($html)
+    {
+        if (!$html) {
+            return $html;
+        }
+
+        $previousUseErrors = libxml_use_internal_errors(true);
+
+        $dom = new \DOMDocument('1.0', 'UTF-8');
+        $wrappedHtml = '<div id="swh-wrapper">' . $html . '</div>';
+        $dom->loadHTML(mb_convert_encoding($wrappedHtml, 'HTML-ENTITIES', 'UTF-8'));
+        $xpath = new \DOMXPath($dom);
+        $nodes = $xpath->query('//*[@data-sidebar-action]');
+        $actionUrl = \Helper::getSubdirectory() . '/sidebar/action';
+
+        if ($nodes instanceof \DOMNodeList) {
+            $nodesArray = [];
+            foreach ($nodes as $node) {
+                $nodesArray[] = $node;
+            }
+
+            foreach ($nodesArray as $node) {
+                $form = $dom->createElement('form');
+                $form->setAttribute('method', 'post');
+                $form->setAttribute('action', $actionUrl);
+                $form->setAttribute('class', 'sidebar-action-form');
+
+                $csrfInput = $dom->createElement('input');
+                $csrfInput->setAttribute('type', 'hidden');
+                $csrfInput->setAttribute('name', '_token');
+                $csrfInput->setAttribute('value', csrf_token());
+                $form->appendChild($csrfInput);
+
+                $hiddenFields = [
+                    'action' => $node->getAttribute('data-sidebar-action'),
+                    'ticket_id' => $node->getAttribute('data-ticket-id'),
+                    'product_id' => $node->getAttribute('data-product-id'),
+                    'ticket_product_id' => $node->getAttribute('data-ticket-product-id'),
+                ];
+
+                foreach ($hiddenFields as $name => $value) {
+                    if ($value === '') {
+                        continue;
+                    }
+                    $input = $dom->createElement('input');
+                    $input->setAttribute('type', 'hidden');
+                    $input->setAttribute('name', $name);
+                    $input->setAttribute('value', $value);
+                    $form->appendChild($input);
+                }
+
+                $button = $dom->createElement('button');
+                $button->setAttribute('type', 'submit');
+
+                $classAttr = $node->getAttribute('class');
+                if ($classAttr) {
+                    $button->setAttribute('class', $classAttr);
+                }
+
+                while ($node->firstChild) {
+                    $button->appendChild($node->firstChild);
+                }
+
+                $form->appendChild($button);
+                $node->parentNode->replaceChild($form, $node);
+            }
+        }
+
+        libxml_clear_errors();
+        libxml_use_internal_errors($previousUseErrors);
+
+        $wrapper = $dom->getElementById('swh-wrapper');
+        if (!$wrapper) {
+            return $html;
+        }
+
+        $output = '';
+        foreach ($wrapper->childNodes as $child) {
+            $output .= $dom->saveHTML($child);
+        }
+
+        return $output;
     }
 }

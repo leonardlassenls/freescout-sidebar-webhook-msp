@@ -14,6 +14,11 @@ class SidebarWebhookServiceProvider extends ServiceProvider
         $this->hooks();
     }
 
+    public function register()
+    {
+        $this->mergeConfigFrom(__DIR__ . '/../config/sidebar.php', 'sidebar');
+    }
+
     public function registerViews()
     {
         $viewPath = resource_path('views/modules/sidebarwebhook');
