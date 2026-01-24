@@ -90,6 +90,9 @@ class SidebarWebhookController extends Controller
             'product_id' => $request->input('product_id'),
             'ticket_id' => $request->input('ticket_id'),
             'ticket_product_id' => $request->input('ticket_product_id'),
+            'conversationId' => $conversationId,
+            'conversationStatus' => $conversationStatus,
+            'conversationStatusName' => $conversationStatusName,
         ];
 
         \Log::debug('Sidebar webhook payload', [
