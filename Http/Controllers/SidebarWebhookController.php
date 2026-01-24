@@ -3,9 +3,7 @@
 namespace Modules\SidebarWebhook\Http\Controllers;
 
 use App\Mailbox;
-use App\Conversation;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Http;
 
@@ -48,130 +46,89 @@ class SidebarWebhookController extends Controller
         return redirect()->route('mailboxes.sidebarwebhook', ['id' => $id]);
     }
 
-    /**
-     * Ajax controller.
-     */
-    public function ajax(Request $request)
-    {
-        $response = [
-            'status' => 'error',
-            'msg'    => '', // this is error message
-        ];
-
-        switch ($request->action) {
-
-            case 'loadSidebar':
-                // mailbox_id and customer_id are required.
-                if (!$request->mailbox_id || !$request->conversation_id) {
-                    $response['msg'] = 'Missing required parameters';
-                    break;
-                }
-
-                try {
-                    $mailbox = Mailbox::findOrFail($request->mailbox_id);
-                    $conversation = Conversation::findOrFail($request->conversation_id);
-                    $customer = $conversation->customer;
-                } catch (\Exception $e) {
-                    $response['msg'] = 'Invalid mailbox or customer';
-                    break;
-                }
-
-                $url = \Option::get('sidebarwebhook.url')[(string)$mailbox->id] ?? '';
-                $secret = \Option::get('sidebarwebhook.secret')[(string)$mailbox->id] ?? '';
-                if (!$url) {
-                    $response['msg'] = 'Webhook URL is not set';
-                    break;
-                }
-
-                $conversationId = (int) $conversation->id;
-
-                $payload = [
-                    'customerId'          => $customer->id,
-                    'customerEmail'       => $customer->getMainEmail(),
-                    'customerEmails'      => $customer->emails->pluck('email')->toArray(),
-                    'customerPhones'      => $customer->getPhones(),
-                    'conversationId'      => $conversationId,
-                    'conversation_id'     => $conversationId,
-                    'conversationStatus'  => $conversation->status,
-                    'conversation_status' => $conversation->status,
-                    'conversationStatusName' => method_exists($conversation, 'getStatusName')
-                        ? $conversation->getStatusName()
-                        : null,
-                    'conversationSubject' => $conversation->getSubject(),
-                    'conversationType'    => $conversation->getTypeName(),
-                    'mailboxId'           => $mailbox->id,
-                    'secret'              => empty($secret) ? '' : $secret,
-                ];
-
-                try {
-                    $client = new \GuzzleHttp\Client();
-                    $result = $client->post($url, [
-                        'headers' => [
-                            'Content-Type' => 'application/json',
-                            'Accept' => 'text/html',
-                        ],
-                        'body' => json_encode($payload),
-                    ]);
-                    $response['html'] = $this->transformSidebarHtml($result->getBody()->getContents());
-                    $response['status'] = 'success';
-                } catch (\Exception $e) {
-                    $response['msg'] = 'Webhook error: ' . $e->getMessage();
-                    break;
-                }
-
-                break;
-
-            default:
-                $response['msg'] = 'Unknown action';
-                break;
-        }
-
-        if ($response['status'] == 'error' && empty($response['msg'])) {
-            $response['msg'] = 'Unknown error occured';
-        }
-
-        return \Response::json($response);
-    }
-
     public function handleAction(Request $request)
     {
-        \Log::info('SIDEBAR ACTION', $request->all());
+        $conversationId = $request->input('conversationId')
+            ?? $request->input('conversation_id')
+            ?? null;
+        $conversationId = $conversationId !== null ? (int) $conversationId : null;
+
+        $statusId = $request->input('conversationStatus', $request->input('conversation_status'));
+        $conversationStatus = $this->normalizeConversationStatus($statusId);
+        $conversationStatusName = (string) $request->input('conversationStatusName', $request->input('conversation_status_name', ''));
+
+        $mailboxId = $request->input('mailboxId', $request->input('mailbox_id'));
+        $mailboxId = $mailboxId !== null ? (int) $mailboxId : '';
+        $customerId = $request->input('customerId', $request->input('customer_id'));
+        $customerId = $customerId !== null ? (int) $customerId : '';
+
+        if (!$conversationId) {
+            return response($this->renderSidebarMessage('Ticket-ID nicht übergeben'), 200)
+                ->header('Content-Type', 'text/html');
+        }
 
         $baseUrl = config('sidebar.msp_manager_url');
         if (!$baseUrl) {
-            return response('<div>MSP Manager URL is not configured</div>', 500)
+            return response($this->renderSidebarMessage('MSP Manager URL ist nicht konfiguriert'), 200)
                 ->header('Content-Type', 'text/html');
         }
 
-        $endpoint = rtrim($baseUrl, '/') . '/webhook/freescout/sidebar';
+        $sidebarAction = $request->input('sidebar_action', $request->input('action', 'render'));
 
         $payload = [
-            'action' => $request->input('action'),
-            'ticket_id' => $request->input('ticket_id'),
+            'conversation_id' => $conversationId,
+            'conversation_status' => $conversationStatus,
+            'conversation_status_name' => $conversationStatusName,
+            'conversationId' => $conversationId,
+            'conversationStatus' => $conversationStatus,
+            'conversationStatusName' => $conversationStatusName,
+            'mailbox_id' => $mailboxId,
+            'mailboxId' => $mailboxId,
+            'customer_id' => $customerId,
+            'customerId' => $customerId,
+            'sidebar_action' => $sidebarAction,
             'product_id' => $request->input('product_id'),
+            'ticket_id' => $request->input('ticket_id'),
             'ticket_product_id' => $request->input('ticket_product_id'),
         ];
 
+        \Log::debug('Sidebar webhook payload', [
+            'conversationId' => $conversationId,
+            'conversationStatus' => $conversationStatus,
+        ]);
+
         try {
-            switch ($request->input('action')) {
-                case 'add_product':
-                case 'remove_product':
-                default:
-                    $response = Http::asForm()
-                        ->accept('text/html')
-                        ->post($endpoint, $payload);
-                    break;
-            }
-        } catch (\Exception $e) {
-            return response('<div>Webhook error: ' . e($e->getMessage()) . '</div>', 500)
+            $response = Http::asForm()
+                ->timeout(2)
+                ->accept('text/html')
+                ->post($baseUrl, $payload);
+        } catch (\Throwable $e) {
+            \Log::warning('[SidebarWebhook] MSP call failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response($this->renderSidebarMessage('MSP Manager nicht erreichbar'), 200)
                 ->header('Content-Type', 'text/html');
         }
 
-        return response($response->body(), $response->status())
+        if (!$response->ok()) {
+            return response($this->renderSidebarMessage('MSP Manager nicht erreichbar'), 200)
+                ->header('Content-Type', 'text/html');
+        }
+
+        $body = $this->transformSidebarHtml($response->body(), [
+            'conversationId' => $conversationId,
+            'conversationStatus' => $conversationStatus,
+            'conversationStatusName' => $conversationStatusName,
+            'mailboxId' => $mailboxId,
+            'customerId' => $customerId,
+        ]);
+
+        return response($body, 200)
             ->header('Content-Type', 'text/html');
     }
 
-    private function transformSidebarHtml($html)
+    private function transformSidebarHtml($html, array $conversationFields = [])
     {
         if (!$html) {
             return $html;
@@ -184,7 +141,7 @@ class SidebarWebhookController extends Controller
         $dom->loadHTML(mb_convert_encoding($wrappedHtml, 'HTML-ENTITIES', 'UTF-8'));
         $xpath = new \DOMXPath($dom);
         $nodes = $xpath->query('//*[@data-sidebar-action]');
-        $actionUrl = '/sidebar/action';
+        $actionUrl = \Helper::getSubdirectory() . '/sidebar/action';
 
         if ($nodes instanceof \DOMNodeList) {
             $nodesArray = [];
@@ -205,11 +162,12 @@ class SidebarWebhookController extends Controller
                 $form->appendChild($csrfInput);
 
                 $hiddenFields = [
-                    'action' => $node->getAttribute('data-sidebar-action'),
+                    'sidebar_action' => $node->getAttribute('data-sidebar-action'),
                     'ticket_id' => $node->getAttribute('data-ticket-id'),
                     'product_id' => $node->getAttribute('data-product-id'),
                     'ticket_product_id' => $node->getAttribute('data-ticket-product-id'),
                 ];
+                $hiddenFields = array_merge($hiddenFields, $conversationFields);
 
                 foreach ($hiddenFields as $name => $value) {
                     $input = $dom->createElement('input');
@@ -250,5 +208,37 @@ class SidebarWebhookController extends Controller
         }
 
         return $output;
+    }
+
+    private function normalizeConversationStatus($statusId)
+    {
+        $statusMap = [
+            1 => 'active',
+            2 => 'pending',
+            3 => 'closed',
+        ];
+
+        if ($statusId === null || $statusId === '') {
+            return 'unknown';
+        }
+
+        if (is_numeric($statusId)) {
+            $statusId = (int) $statusId;
+            return $statusMap[$statusId] ?? 'unknown';
+        }
+
+        $statusId = (string) $statusId;
+        if (in_array($statusId, $statusMap, true)) {
+            return $statusId;
+        }
+
+        return 'unknown';
+    }
+
+    private function renderSidebarMessage($message)
+    {
+        return \View::make('sidebarwebhook::sidebar', [
+            'message' => $message,
+        ])->render();
     }
 }
