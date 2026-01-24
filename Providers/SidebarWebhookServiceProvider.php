@@ -65,8 +65,14 @@ class SidebarWebhookServiceProvider extends ServiceProvider
             $url = \Option::get('sidebarwebhook.url')[(string)$mailbox->id] ?? '';
 
             if ($url != '') {
+                $conversationStatusName = method_exists($conversation, 'getStatusName')
+                    ? $conversation->getStatusName()
+                    : null;
                 echo \View::make(self::MODULE_NAME . '::partials/sidebar', [
                     'webhook_url' => $url,
+                    'conversation_id' => (int) $conversation->id,
+                    'conversation_status' => (string) $conversation->status,
+                    'conversation_status_name' => $conversationStatusName,
                 ])->render();
             }
         }, -1, 3);

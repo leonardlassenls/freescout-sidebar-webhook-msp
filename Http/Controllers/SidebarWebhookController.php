@@ -84,6 +84,10 @@ class SidebarWebhookController extends Controller
                 }
 
                 $conversationId = (int) $conversation->id;
+                $conversationStatus = (string) $conversation->status;
+                $conversationStatusName = method_exists($conversation, 'getStatusName')
+                    ? $conversation->getStatusName()
+                    : '';
 
                 $payload = [
                     'customerId'          => $customer->id,
@@ -92,11 +96,9 @@ class SidebarWebhookController extends Controller
                     'customerPhones'      => $customer->getPhones(),
                     'conversationId'      => $conversationId,
                     'conversation_id'     => $conversationId,
-                    'conversationStatus'  => $conversation->status,
-                    'conversation_status' => $conversation->status,
-                    'conversationStatusName' => method_exists($conversation, 'getStatusName')
-                        ? $conversation->getStatusName()
-                        : null,
+                    'conversationStatus'  => $conversationStatus,
+                    'conversation_status' => $conversationStatus,
+                    'conversationStatusName' => $conversationStatusName,
                     'conversationSubject' => $conversation->getSubject(),
                     'conversationType'    => $conversation->getTypeName(),
                     'mailboxId'           => $mailbox->id,
@@ -104,6 +106,10 @@ class SidebarWebhookController extends Controller
                 ];
 
                 try {
+                    \Log::debug('Sidebar webhook payload', [
+                        'conversationId' => $conversationId,
+                        'conversationStatus' => $conversationStatus,
+                    ]);
                     $client = new \GuzzleHttp\Client();
                     $result = $client->post($url, [
                         'headers' => [
@@ -112,7 +118,11 @@ class SidebarWebhookController extends Controller
                         ],
                         'body' => json_encode($payload),
                     ]);
-                    $response['html'] = $this->transformSidebarHtml($result->getBody()->getContents());
+                    $response['html'] = $this->transformSidebarHtml($result->getBody()->getContents(), [
+                        'conversationId' => $conversationId,
+                        'conversationStatus' => $conversationStatus,
+                        'conversationStatusName' => $conversationStatusName,
+                    ]);
                     $response['status'] = 'success';
                 } catch (\Exception $e) {
                     $response['msg'] = 'Webhook error: ' . $e->getMessage();
@@ -135,7 +145,13 @@ class SidebarWebhookController extends Controller
 
     public function handleAction(Request $request)
     {
-        \Log::info('SIDEBAR ACTION', $request->all());
+        $conversationId = (int) $request->input('conversationId', $request->input('conversation_id'));
+        $conversationStatus = (string) $request->input('conversationStatus', $request->input('conversation_status'));
+        $conversationStatusName = (string) $request->input('conversationStatusName', $request->input('conversation_status_name', ''));
+        \Log::debug('Sidebar action payload', [
+            'conversationId' => $conversationId,
+            'conversationStatus' => $conversationStatus,
+        ]);
 
         $baseUrl = config('sidebar.msp_manager_url');
         if (!$baseUrl) {
@@ -150,6 +166,9 @@ class SidebarWebhookController extends Controller
             'ticket_id' => $request->input('ticket_id'),
             'product_id' => $request->input('product_id'),
             'ticket_product_id' => $request->input('ticket_product_id'),
+            'conversationId' => $conversationId,
+            'conversationStatus' => $conversationStatus,
+            'conversationStatusName' => $conversationStatusName,
         ];
 
         try {
@@ -167,11 +186,17 @@ class SidebarWebhookController extends Controller
                 ->header('Content-Type', 'text/html');
         }
 
-        return response($response->body(), $response->status())
+        $body = $this->transformSidebarHtml($response->body(), [
+            'conversationId' => $conversationId,
+            'conversationStatus' => $conversationStatus,
+            'conversationStatusName' => $conversationStatusName,
+        ]);
+
+        return response($body, $response->status())
             ->header('Content-Type', 'text/html');
     }
 
-    private function transformSidebarHtml($html)
+    private function transformSidebarHtml($html, array $conversationFields = [])
     {
         if (!$html) {
             return $html;
@@ -210,6 +235,9 @@ class SidebarWebhookController extends Controller
                     'product_id' => $node->getAttribute('data-product-id'),
                     'ticket_product_id' => $node->getAttribute('data-ticket-product-id'),
                 ];
+                $hiddenFields = array_merge($hiddenFields, array_filter($conversationFields, function ($value) {
+                    return $value !== null;
+                }));
 
                 foreach ($hiddenFields as $name => $value) {
                     $input = $dom->createElement('input');
