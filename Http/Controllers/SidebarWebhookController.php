@@ -135,20 +135,40 @@ class SidebarWebhookController extends Controller
 
     public function handleAction(Request $request)
     {
-        $url = config('sidebar.msp_manager_url');
+        \Log::info('SIDEBAR ACTION', $request->all());
 
-        if (!$url) {
-            return response()->json(['message' => 'MSP Manager URL is not configured'], 500);
+        $baseUrl = config('sidebar.msp_manager_url');
+        if (!$baseUrl) {
+            return response('<div>MSP Manager URL is not configured</div>', 500)
+                ->header('Content-Type', 'text/html');
         }
 
-        Http::post($url, [
-            'sidebar_action' => $request->input('action'),
+        $endpoint = rtrim($baseUrl, '/') . '/webhook/freescout/sidebar';
+
+        $payload = [
+            'action' => $request->input('action'),
             'ticket_id' => $request->input('ticket_id'),
             'product_id' => $request->input('product_id'),
             'ticket_product_id' => $request->input('ticket_product_id'),
-        ]);
+        ];
 
-        return response()->noContent();
+        try {
+            switch ($request->input('action')) {
+                case 'add_product':
+                case 'remove_product':
+                default:
+                    $response = Http::asForm()
+                        ->accept('text/html')
+                        ->post($endpoint, $payload);
+                    break;
+            }
+        } catch (\Exception $e) {
+            return response('<div>Webhook error: ' . e($e->getMessage()) . '</div>', 500)
+                ->header('Content-Type', 'text/html');
+        }
+
+        return response($response->body(), $response->status())
+            ->header('Content-Type', 'text/html');
     }
 
     private function transformSidebarHtml($html)
@@ -164,7 +184,7 @@ class SidebarWebhookController extends Controller
         $dom->loadHTML(mb_convert_encoding($wrappedHtml, 'HTML-ENTITIES', 'UTF-8'));
         $xpath = new \DOMXPath($dom);
         $nodes = $xpath->query('//*[@data-sidebar-action]');
-        $actionUrl = \Helper::getSubdirectory() . '/sidebar/action';
+        $actionUrl = '/sidebar/action';
 
         if ($nodes instanceof \DOMNodeList) {
             $nodesArray = [];
@@ -192,9 +212,6 @@ class SidebarWebhookController extends Controller
                 ];
 
                 foreach ($hiddenFields as $name => $value) {
-                    if ($value === '') {
-                        continue;
-                    }
                     $input = $dom->createElement('input');
                     $input->setAttribute('type', 'hidden');
                     $input->setAttribute('name', $name);
