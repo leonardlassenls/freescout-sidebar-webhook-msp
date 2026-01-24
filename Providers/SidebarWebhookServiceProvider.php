@@ -59,7 +59,9 @@ class SidebarWebhookServiceProvider extends ServiceProvider
             $url = \Option::get('sidebarwebhook.url')[(string)$mailbox->id] ?? '';
 
             if ($url != '') {
-                echo \View::make(self::MODULE_NAME . '::partials/sidebar', [])->render();
+                echo \View::make(self::MODULE_NAME . '::partials/sidebar', [
+                    'webhook_url' => $url,
+                ])->render();
             }
         }, -1, 3);
     }
