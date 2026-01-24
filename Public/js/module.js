@@ -4,32 +4,48 @@ function swh_load_content() {
     $('#swh-content').addClass('hide');
     $('#swh-loader').removeClass('hide');
 
-	fsAjax({
-			action: 'loadSidebar',
-            mailbox_id: getGlobalAttr('mailbox_id'),
-            conversation_id: getGlobalAttr('conversation_id')
-		},
-		laroute.route('sidebarwebhook.ajax'),
-		function(response) {
-            if (typeof(response.status) != "undefined" && response.status == 'success' && typeof(response.html) != "undefined" && response.html) {
-                $('#swh-content').html(response.html);
-                bindSidebarForms();
+    var actionUrl = getSidebarActionUrl();
+    var payload = getSidebarPayload('render');
 
-                // Find a <title> element inside the response and display it
-                title = $('#swh-content').find('title').first().text();
+    if (!actionUrl) {
+        showAjaxError({ msg: 'Sidebar action URL is not configured' });
+        return;
+    }
 
-                if (title) {
-                    $('#swh-title').html(title);
-                    $('#swh-title').parent().removeClass('hide');
-                }
+    fetch(actionUrl, {
+        method: 'POST',
+        body: payload,
+        credentials: 'include',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(function(response) {
+        return response.text();
+    })
+    .then(function(html) {
+        if (html) {
+            $('#swh-content').html(html);
+            bindSidebarForms();
 
-                $('#swh-loader').addClass('hide');
-                $('#swh-content').removeClass('hide');
-            } else {
-                showAjaxError(response);
+            // Find a <title> element inside the response and display it
+            title = $('#swh-content').find('title').first().text();
+
+            if (title) {
+                $('#swh-title').html(title);
+                $('#swh-title').parent().removeClass('hide');
             }
-		}, true
-	);
+
+            $('#swh-loader').addClass('hide');
+            $('#swh-content').removeClass('hide');
+        } else {
+            showAjaxError({ msg: 'Sidebar response was empty' });
+        }
+    })
+    .catch(function(error) {
+        console.error('Sidebar load failed', error);
+        showAjaxError({ msg: 'Sidebar load failed' });
+    });
 }
 
 function bindSidebarForms() {
@@ -39,7 +55,7 @@ function bindSidebarForms() {
             e.preventDefault();
             var form = this;
             ensureSidebarConversationFields(form);
-            var formAction = form.getAttribute('action') || form.action;
+            var formAction = form.getAttribute('action') || form.action || getSidebarActionUrl();
             var formMethod = (form.getAttribute('method') || form.method || 'POST').toUpperCase();
 
             fetch(formAction, {
@@ -69,14 +85,16 @@ function bindSidebarForms() {
 }
 
 function ensureSidebarConversationFields(form) {
-    var conversationData = getSidebarConversationData();
-    if (!conversationData.conversationId || !conversationData.conversationStatus) {
+    var metadata = getSidebarMetadata();
+    if (!metadata.conversationId || !metadata.conversationStatus) {
         return;
     }
 
-    setHiddenInput(form, 'conversationId', conversationData.conversationId);
-    setHiddenInput(form, 'conversationStatus', conversationData.conversationStatus);
-    setHiddenInput(form, 'conversationStatusName', conversationData.conversationStatusName);
+    setHiddenInput(form, 'conversationId', metadata.conversationId);
+    setHiddenInput(form, 'conversationStatus', metadata.conversationStatus);
+    setHiddenInput(form, 'conversationStatusName', metadata.conversationStatusName);
+    setHiddenInput(form, 'mailboxId', metadata.mailboxId);
+    setHiddenInput(form, 'customerId', metadata.customerId);
 }
 
 function setHiddenInput(form, name, value) {
@@ -90,15 +108,34 @@ function setHiddenInput(form, name, value) {
     input.value = value;
 }
 
-function getSidebarConversationData() {
+function getSidebarMetadata() {
     var container = document.getElementById('swh-content');
     var dataset = container ? container.dataset : {};
 
     return {
         conversationId: dataset && dataset.conversationId ? dataset.conversationId : getGlobalAttr('conversation_id'),
         conversationStatus: dataset && dataset.conversationStatus ? dataset.conversationStatus : getGlobalAttr('conversation_status'),
-        conversationStatusName: dataset && dataset.conversationStatusName ? dataset.conversationStatusName : (getGlobalAttr('conversation_status_name') || '')
+        conversationStatusName: dataset && dataset.conversationStatusName ? dataset.conversationStatusName : (getGlobalAttr('conversation_status_name') || ''),
+        mailboxId: dataset && dataset.mailboxId ? dataset.mailboxId : getGlobalAttr('mailbox_id'),
+        customerId: dataset && dataset.customerId ? dataset.customerId : getGlobalAttr('customer_id')
     };
+}
+
+function getSidebarActionUrl() {
+    var container = document.getElementById('swh-content');
+    return container && container.dataset ? container.dataset.actionUrl : null;
+}
+
+function getSidebarPayload(action) {
+    var metadata = getSidebarMetadata();
+    var payload = new FormData();
+    payload.append('sidebar_action', action);
+    payload.append('conversationId', metadata.conversationId || '');
+    payload.append('conversationStatus', metadata.conversationStatus || '');
+    payload.append('conversationStatusName', metadata.conversationStatusName || '');
+    payload.append('mailboxId', metadata.mailboxId || '');
+    payload.append('customerId', metadata.customerId || '');
+    return payload;
 }
 
 $(document).ready(function() {
@@ -111,43 +148,6 @@ $(document).ready(function() {
     if ($('#swh-content').length == 0) {
         return;
     }
-
-    const WEBHOOK_URL = $('#swh-content').data('webhook-url');
-
-    document.addEventListener('click', function(e) {
-        const el = e.target.closest('[data-sidebar-action]');
-        if (!el) {
-            return;
-        }
-
-        e.preventDefault();
-
-        const payload = {
-            sidebar_action: el.dataset.sidebarAction,
-            ticket_id: el.dataset.ticketId,
-            product_id: el.dataset.productId,
-            ticket_product_id: el.dataset.ticketProductId
-        };
-
-        console.log('Sidebar action', payload);
-
-        if (!WEBHOOK_URL) {
-            console.warn('Sidebar webhook URL is not configured');
-            return;
-        }
-
-        fetch(WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        })
-        .then(function() {
-            window.location.reload();
-        })
-        .catch(function(error) {
-            console.error('Sidebar action failed', error);
-        });
-    });
 
     swh_load_content();
 

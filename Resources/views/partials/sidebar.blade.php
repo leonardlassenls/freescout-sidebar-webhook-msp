@@ -6,8 +6,11 @@
         <div class="panel-body">
             <div class="panel panel-default hide" id="swh-content"
                 data-webhook-url="{{ $webhook_url }}"
+                data-action-url="{{ $action_url }}"
                 data-conversation-id="{{ $conversation_id }}"
                 data-conversation-status="{{ $conversation_status }}"
+                data-mailbox-id="{{ $mailbox_id }}"
+                data-customer-id="{{ $customer_id }}"
                 @if (!empty($conversation_status_name))
                     data-conversation-status-name="{{ $conversation_status_name }}"
                 @endif

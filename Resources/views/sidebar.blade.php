@@ -1,0 +1,5 @@
+<div class="panel panel-default">
+    <div class="panel-body">
+        <p>{{ $message }}</p>
+    </div>
+</div>

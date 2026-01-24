@@ -1,2 +1,5 @@
 <?php
-// intentionally empty – routing handled by ServiceProvider
+
+if (!app()->routesAreCached()) {
+    require __DIR__ . '/Routes/web.php';
+}
